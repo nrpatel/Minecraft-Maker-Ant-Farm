@@ -26,10 +26,29 @@
 #include <XnCodecIDs.h>
 #include <XnCppWrapper.h>
 #include "SceneDrawer.h"
+#include <pandaFramework.h>
+#include <pandaSystem.h>
+#include <genericAsyncTask.h>
+#include <asyncTaskManager.h>
+#include <texture.h>
+#include <texturePool.h>
+#include <nodePathCollection.h>
+#include <character.h>
+#include <characterJointBundle.h>
+#include <modelRoot.h>
+#include <lmatrix.h>
 
 //---------------------------------------------------------------------------
 // Globals
 //---------------------------------------------------------------------------
+PandaFramework framework;
+// The global task manager
+PT(AsyncTaskManager) taskMgr = AsyncTaskManager::get_global_ptr(); 
+// The global clock
+PT(ClockObject) globalClock = ClockObject::get_global_clock();
+// Here's what we'll store the camera in.
+NodePath camera;
+
 xn::Context g_Context;
 xn::DepthGenerator g_DepthGenerator;
 xn::UserGenerator g_UserGenerator;
@@ -42,11 +61,6 @@ XnBool g_bDrawSkeleton = TRUE;
 XnBool g_bPrintID = TRUE;
 XnBool g_bPrintState = TRUE;
 
-#include <GL/glut.h>
-
-#define GL_WIN_SIZE_X 720
-#define GL_WIN_SIZE_Y 480
-
 XnBool g_bPause = false;
 XnBool g_bRecord = false;
 
@@ -55,13 +69,6 @@ XnBool g_bQuit = false;
 //---------------------------------------------------------------------------
 // Code
 //---------------------------------------------------------------------------
-
-void CleanupExit()
-{
-	g_Context.Shutdown();
-
-	exit (1);
-}
 
 // Callback: New user was detected
 void XN_CALLBACK_TYPE User_NewUser(xn::UserGenerator& generator, XnUserID nId, void* pCookie)
@@ -161,113 +168,6 @@ void LoadCalibration()
 	}
 }
 
-// this function is called each frame
-void glutDisplay (void)
-{
-
-	glClear (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-	// Setup the OpenGL viewpoint
-	glMatrixMode(GL_PROJECTION);
-	glPushMatrix();
-	glLoadIdentity();
-
-	xn::SceneMetaData sceneMD;
-	xn::DepthMetaData depthMD;
-	g_DepthGenerator.GetMetaData(depthMD);
-#ifndef USE_GLES
-	glOrtho(0, depthMD.XRes(), depthMD.YRes(), 0, -1.0, 1.0);
-#else
-	glOrthof(0, depthMD.XRes(), depthMD.YRes(), 0, -1.0, 1.0);
-#endif
-
-	glDisable(GL_TEXTURE_2D);
-
-	if (!g_bPause)
-	{
-		// Read next available data
-		g_Context.WaitOneUpdateAll(g_DepthGenerator);
-	}
-
-		// Process the data
-		g_DepthGenerator.GetMetaData(depthMD);
-		g_UserGenerator.GetUserPixels(0, sceneMD);
-		DrawDepthMap(depthMD, sceneMD);
-
-#ifndef USE_GLES
-	glutSwapBuffers();
-#endif
-}
-
-#ifndef USE_GLES
-void glutIdle (void)
-{
-	if (g_bQuit) {
-		CleanupExit();
-	}
-
-	// Display the frame
-	glutPostRedisplay();
-}
-
-void glutKeyboard (unsigned char key, int x, int y)
-{
-	switch (key)
-	{
-	case 27:
-		CleanupExit();
-	case 'b':
-		// Draw background?
-		g_bDrawBackground = !g_bDrawBackground;
-		break;
-	case 'x':
-		// Draw pixels at all?
-		g_bDrawPixels = !g_bDrawPixels;
-		break;
-	case 's':
-		// Draw Skeleton?
-		g_bDrawSkeleton = !g_bDrawSkeleton;
-		break;
-	case 'i':
-		// Print label?
-		g_bPrintID = !g_bPrintID;
-		break;
-	case 'l':
-		// Print ID & state as label, or only ID?
-		g_bPrintState = !g_bPrintState;
-		break;
-	case'p':
-		g_bPause = !g_bPause;
-		break;
-	case 'S':
-		SaveCalibration();
-		break;
-	case 'L':
-		LoadCalibration();
-		break;
-	}
-}
-void glInit (int * pargc, char ** argv)
-{
-	glutInit(pargc, argv);
-	glutInitDisplayMode(GLUT_RGB | GLUT_DOUBLE | GLUT_DEPTH);
-	glutInitWindowSize(GL_WIN_SIZE_X, GL_WIN_SIZE_Y);
-	glutCreateWindow ("Prime Sense User Tracker Viewer");
-	//glutFullScreen();
-	glutSetCursor(GLUT_CURSOR_NONE);
-
-	glutKeyboardFunc(glutKeyboard);
-	glutDisplayFunc(glutDisplay);
-	glutIdleFunc(glutIdle);
-
-	glDisable(GL_DEPTH_TEST);
-	glEnable(GL_TEXTURE_2D);
-
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
-}
-#endif // USE_GLES
-
 #define SAMPLE_XML_PATH "SamplesConfig.xml"
 
 #define CHECK_RC(nRetVal, what)										\
@@ -277,17 +177,69 @@ void glInit (int * pargc, char ** argv)
 		return nRetVal;												\
 	}
 
-int main(int argc, char **argv)
+// This is our task - a global or static function that has to return DoneStatus.
+// The task object is passed as argument, plus a void* pointer, cointaining custom data.
+// For more advanced usage, we can subclass AsyncTask and override the do_task method.
+AsyncTask::DoneStatus spinCameraTask(GenericAsyncTask* task, void* data)
 {
-	XnStatus nRetVal = XN_STATUS_OK;
-    const char *xmlFile = SAMPLE_XML_PATH;
+  // Calculate the new position and orientation (inefficient - change me!)
+  double time = globalClock->get_real_time();
+  double angledegrees = time * 6.0;
+  double angleradians = angledegrees * (3.14 / 180.0);
+  camera.set_pos(20*sin(angleradians),-20.0*cos(angleradians),3);
+  camera.set_hpr(angledegrees, 0, 0);
+ 
+  // Tell the task manager to continue this task the next frame.
+  return AsyncTask::DS_done;
+}
 
-	if (argc > 1)
+AsyncTask::DoneStatus updateNI(GenericAsyncTask* task, void* data)
+{
+	xn::SceneMetaData sceneMD;
+	xn::DepthMetaData depthMD;
+
+	if (!g_bPause)
 	{
-		xmlFile = argv[1];
+		// Read next available data
+		g_Context.WaitOneUpdateAll(g_DepthGenerator);
 	}
 
-	xn::EnumerationErrors errors;
+	// Process the data
+	g_DepthGenerator.GetMetaData(depthMD);
+	g_UserGenerator.GetUserPixels(0, sceneMD);
+//	printf("in updateNI\n");
+//	DrawDepthMap(depthMD, sceneMD);
+
+    return AsyncTask::DS_cont;
+}
+
+AsyncTask::DoneStatus moveJoint(GenericAsyncTask* task, void* data)
+{
+    NodePath lArm = *(NodePath *)data;
+ 
+	XnUserID aUsers[15];
+	XnUInt16 nUsers = 15;
+	g_UserGenerator.GetUsers(aUsers, nUsers);
+	if (nUsers && g_UserGenerator.GetSkeletonCap().IsTracking(aUsers[0])) {
+	    XnSkeletonJointOrientation orient;
+	    g_UserGenerator.GetSkeletonCap().GetSkeletonJointOrientation(aUsers[0],XN_SKEL_LEFT_SHOULDER,orient);
+	    XnFloat *e = orient.orientation.elements;
+	    LMatrix4f mat = lArm.get_mat();
+	    mat.set(e[0],e[1],e[2],0.0,e[3],e[4],e[5],0.0,e[6],e[7],e[8],0.0,0.0,0.0,0.0,1.0);
+	    lArm.set_mat(mat);
+	}
+    
+    std::cout << lArm.get_mat() << "\n\n";
+
+    // Tell the task manager to continue this task the next frame.
+    return AsyncTask::DS_cont;
+}
+
+int setupNI(const char *xmlFile)
+{
+	XnStatus nRetVal = XN_STATUS_OK;
+    
+    xn::EnumerationErrors errors;
 	nRetVal = g_Context.InitFromXmlFile(xmlFile, &errors);
 	if (nRetVal == XN_STATUS_NO_NODE_PRESENT)
 	{
@@ -336,29 +288,85 @@ int main(int argc, char **argv)
 
 	nRetVal = g_Context.StartGeneratingAll();
 	CHECK_RC(nRetVal, "StartGenerating");
+}
 
-#ifndef USE_GLES
-	glInit(&argc, argv);
-	glutMainLoop();
-#else
-	if (!opengles_init(GL_WIN_SIZE_X, GL_WIN_SIZE_Y, &display, &surface, &context))
+void printChildren(NodePath node)
+{
+    NodePathCollection npc = node.get_children();
+    for (int i = 0; i < npc.size(); ++i) {
+        std::cout << npc[i] << "\n";
+        printChildren(npc[i]);
+    }
+}
+
+void printCharacterChildren(PartGroup* bundle)
+{
+    for (int i = 0; i < bundle->get_num_children(); i++) {
+        std::cout << bundle->get_child(i)->get_name() << "\n";
+        printCharacterChildren(bundle->get_child(i));
+    }
+}
+
+int main(int argc, char **argv)
+{
+    framework.open_framework(argc, argv);
+
+    const char *xmlFile = SAMPLE_XML_PATH;
+
+	if (argc > 1)
 	{
-		printf("Error initializing opengles\n");
-		CleanupExit();
+		xmlFile = argv[1];
 	}
 
-	glDisable(GL_DEPTH_TEST);
-	glEnable(GL_TEXTURE_2D);
-	glEnableClientState(GL_VERTEX_ARRAY);
-	glDisableClientState(GL_COLOR_ARRAY);
+    setupNI(xmlFile);
 
-	while (!g_bQuit)
-	{
-		glutDisplay();
-		eglSwapBuffers(display, surface);
-	}
-	opengles_shutdown(display, surface, context);
+    framework.set_window_title("My Panda3D Window");
+    WindowFramework *window = framework.open_window();
+    // Get the camera and store it in a variable.
+    camera = window->get_camera_group();
+    camera.set_pos(0,-15,3);
+    camera.set_hpr(0, 0, 0);
+ 
+    // Load the environment model.
+//    NodePath environ = window->load_model(framework.get_models(), "models/environment");
+    NodePath environ = window->load_model(framework.get_models(), "MinecraftBody_bend.egg");
+    environ.set_transparency(TransparencyAttrib::M_alpha);
+    
+    PT(Texture) tex;
+    tex = TexturePool::load_texture("Char.png");
+    tex->set_magfilter(Texture::FT_nearest);
+    printf("texture alpha %d\n",(int)tex->has_alpha(tex->get_format()));
+    environ.set_texture(tex, 1);
+    
+    // Reparent the model to render.
+    environ.reparent_to(window->get_render());
+    // Apply scale and position transforms to the model.
+//    environ.set_scale(0.25, 0.25, 0.25);
+//    environ.set_pos(-8, 42, 0);
+ 
+    ModelRoot* eveN = (ModelRoot*)environ.node();
+    NodePath eveChNP = environ.find("**/CharRig");      
+    Character* eveCH = (Character*)eveChNP.node();
+    CharacterJointBundle* eveBundle = eveCH->get_bundle(0);
 
-	CleanupExit();
-#endif
+    NodePath lArm = environ.attach_new_node("lArm");
+    eveBundle->control_joint("l_arm", lArm.node());
+    CharacterJoint *joint = (CharacterJoint *)eveBundle->find_child("l_arm");
+    lArm.set_mat(joint->get_default_value());
+
+    printChildren(environ);
+    printCharacterChildren(eveBundle);
+ 
+    // Add our task.
+    // If we specify custom data instead of NULL, it will be passed as the second argument
+    // to the task function.
+//    taskMgr->add(new GenericAsyncTask("Spins the camera", &spinCameraTask, (void*) NULL));
+    taskMgr->add(new GenericAsyncTask("Updates OpenNI data", &updateNI, (void*) NULL));
+    taskMgr->add(new GenericAsyncTask("Moves a joint", &moveJoint, &lArm));
+ 
+    // Run the engine.
+    framework.main_loop();
+    // Shut down the engine when done.
+    framework.close_framework();
+    return (0);
 }

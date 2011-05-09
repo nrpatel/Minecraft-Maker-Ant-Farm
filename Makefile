@@ -2,12 +2,17 @@
 
 CC=g++
 
-OTHERS      = -lglut -lXnVNite -lOpenNI
+OTHERS      = -lglut -lXnVNite -lOpenNI -lp3framework -lpanda   \
+     -lpandafx -lpandaexpress -lp3dtoolconfig -lp3dtool -lp3pystub -lp3direct
 
 LIBNAME     = $(OTHERS)
+
+LIBRARYPATH = -L/usr/lib/panda3d/
               
 INCLUDEPATH = -I/usr/include/nite/                      \
-              -I/usr/include/ni/
+              -I/usr/include/ni/                        \
+              -I/usr/include/panda3d/                   \
+              -I/usr/include/python2.6/
 
 # DEBUG
 CFLAGS      = $(LIBPATH) -ggdb -o0 $(INCLUDEPATH)
@@ -25,7 +30,7 @@ all: $(SRCS) $(EXE)
 	# rm -f $(OBJS)
 
 $(EXE): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) $(LIBNAME) -o $@
+	$(CC) $(CFLAGS) $(LIBRARYPATH) $(OBJS) $(LIBNAME) -o $@
 
 .cpp.o:
 	$(CC) -static $(CFLAGS) $(LIBNAME) -c $< -o $@
