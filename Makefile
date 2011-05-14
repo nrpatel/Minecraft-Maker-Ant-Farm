@@ -18,7 +18,7 @@ INCLUDEPATH = -I/usr/include/nite/                      \
 CFLAGS      = $(LIBPATH) -ggdb -o0 $(INCLUDEPATH)
 
 # RELEASE
-# CFLAGS      = $(LIBPATH) -o3 $(INCLUDEPATH)
+#CFLAGS      = $(LIBPATH) -o3 $(INCLUDEPATH)
 
 SRCS        = $(wildcard src/*.cpp)
 

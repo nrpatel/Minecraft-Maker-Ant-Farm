@@ -48,6 +48,8 @@ PT(AsyncTaskManager) taskMgr = AsyncTaskManager::get_global_ptr();
 PT(ClockObject) globalClock = ClockObject::get_global_clock();
 // Here's what we'll store the camera in.
 NodePath camera;
+WindowFramework* window;
+CharacterJointBundle* mcBundle;
 
 xn::Context g_Context;
 xn::DepthGenerator g_DepthGenerator;
@@ -177,64 +179,6 @@ void LoadCalibration()
 		return nRetVal;												\
 	}
 
-// This is our task - a global or static function that has to return DoneStatus.
-// The task object is passed as argument, plus a void* pointer, cointaining custom data.
-// For more advanced usage, we can subclass AsyncTask and override the do_task method.
-AsyncTask::DoneStatus spinCameraTask(GenericAsyncTask* task, void* data)
-{
-  // Calculate the new position and orientation (inefficient - change me!)
-  double time = globalClock->get_real_time();
-  double angledegrees = time * 6.0;
-  double angleradians = angledegrees * (3.14 / 180.0);
-  camera.set_pos(20*sin(angleradians),-20.0*cos(angleradians),3);
-  camera.set_hpr(angledegrees, 0, 0);
- 
-  // Tell the task manager to continue this task the next frame.
-  return AsyncTask::DS_done;
-}
-
-AsyncTask::DoneStatus updateNI(GenericAsyncTask* task, void* data)
-{
-	xn::SceneMetaData sceneMD;
-	xn::DepthMetaData depthMD;
-
-	if (!g_bPause)
-	{
-		// Read next available data
-		g_Context.WaitOneUpdateAll(g_DepthGenerator);
-	}
-
-	// Process the data
-	g_DepthGenerator.GetMetaData(depthMD);
-	g_UserGenerator.GetUserPixels(0, sceneMD);
-//	printf("in updateNI\n");
-//	DrawDepthMap(depthMD, sceneMD);
-
-    return AsyncTask::DS_cont;
-}
-
-AsyncTask::DoneStatus moveJoint(GenericAsyncTask* task, void* data)
-{
-    NodePath lArm = *(NodePath *)data;
- 
-	XnUserID aUsers[15];
-	XnUInt16 nUsers = 15;
-	g_UserGenerator.GetUsers(aUsers, nUsers);
-	if (nUsers && g_UserGenerator.GetSkeletonCap().IsTracking(aUsers[0])) {
-	    XnSkeletonJointOrientation orient;
-	    g_UserGenerator.GetSkeletonCap().GetSkeletonJointOrientation(aUsers[0],XN_SKEL_LEFT_SHOULDER,orient);
-	    XnFloat *e = orient.orientation.elements;
-	    LMatrix4f mat = lArm.get_mat();
-	    mat.set(e[0],e[1],e[2],0.0,e[3],e[4],e[5],0.0,e[6],e[7],e[8],0.0,0.0,0.0,0.0,1.0);
-	    lArm.set_mat(mat);
-	}
-    
-    std::cout << lArm.get_mat() << "\n\n";
-
-    // Tell the task manager to continue this task the next frame.
-    return AsyncTask::DS_cont;
-}
-
 int setupNI(const char *xmlFile)
 {
 	XnStatus nRetVal = XN_STATUS_OK;
@@ -290,6 +234,113 @@ int setupNI(const char *xmlFile)
 	CHECK_RC(nRetVal, "StartGenerating");
 }
 
+// This is our task - a global or static function that has to return DoneStatus.
+// The task object is passed as argument, plus a void* pointer, cointaining custom data.
+// For more advanced usage, we can subclass AsyncTask and override the do_task method.
+AsyncTask::DoneStatus spinCameraTask(GenericAsyncTask* task, void* data)
+{
+  // Calculate the new position and orientation (inefficient - change me!)
+  double time = globalClock->get_real_time();
+  double angledegrees = time * 6.0;
+  double angleradians = angledegrees * (3.14 / 180.0);
+  camera.set_pos(20*sin(angleradians),-20.0*cos(angleradians),3);
+  camera.set_hpr(angledegrees, 0, 0);
+ 
+  // Tell the task manager to continue this task the next frame.
+  return AsyncTask::DS_done;
+}
+
+AsyncTask::DoneStatus updateNI(GenericAsyncTask* task, void* data)
+{
+	xn::SceneMetaData sceneMD;
+	xn::DepthMetaData depthMD;
+
+	if (!g_bPause)
+	{
+		// Read next available data
+		g_Context.WaitOneUpdateAll(g_DepthGenerator);
+	}
+
+	// Process the data
+	g_DepthGenerator.GetMetaData(depthMD);
+	g_UserGenerator.GetUserPixels(0, sceneMD);
+//	printf("in updateNI\n");
+//	DrawDepthMap(depthMD, sceneMD);
+
+    return AsyncTask::DS_cont;
+}
+
+XnSkeletonJoint jointForName(string name)
+{
+    if (name.compare("body") == 0) {
+        return XN_SKEL_TORSO;
+    } else if (name.compare("body_lower") == 0) {
+        return XN_SKEL_TORSO;
+    } else if (name.compare("head") == 0) {
+        return XN_SKEL_HEAD;
+    } else if (name.compare("l_arm") == 0) {
+        return XN_SKEL_RIGHT_SHOULDER;
+    } else if (name.compare("l_arm_lower") == 0) {
+        return XN_SKEL_RIGHT_ELBOW;
+    } else if (name.compare("r_arm") == 0) {
+        return XN_SKEL_LEFT_SHOULDER;
+    } else if (name.compare("r_arm_lower") == 0) {
+        return XN_SKEL_LEFT_ELBOW;
+    } else if (name.compare("l_leg") == 0) {
+        return XN_SKEL_RIGHT_HIP;
+    } else if (name.compare("l_leg_lower") == 0) {
+        return XN_SKEL_RIGHT_KNEE;
+    } else if (name.compare("r_leg") == 0) {
+        return XN_SKEL_LEFT_HIP;
+    } else if (name.compare("r_leg_lower") == 0) {
+        return XN_SKEL_LEFT_KNEE;
+    } else {
+        return XN_SKEL_LEFT_FOOT; // Treat my left foot as the error case
+    }
+}
+
+AsyncTask::DoneStatus moveJoint(GenericAsyncTask* task, void* data)
+{
+    if (data == NULL) return AsyncTask::DS_cont;
+    NodePathCollection *collection = (NodePathCollection *)data;
+ 
+	XnUserID aUsers[15];
+	XnUInt16 nUsers = 15;
+    g_UserGenerator.GetUsers(aUsers, nUsers);
+    
+	if (nUsers && g_UserGenerator.GetSkeletonCap().IsTracking(aUsers[0])) {
+	
+	    for (int i = 0; i < collection->size(); i++) {
+	        NodePath node = collection->get_path(i);
+	        
+	        XnSkeletonJoint joint = jointForName(node.get_name());
+
+	        if ((joint != XN_SKEL_LEFT_FOOT)) {
+	            XnSkeletonJointOrientation orient;
+	            XnSkeletonJointPosition pos;
+	            g_UserGenerator.GetSkeletonCap().GetSkeletonJointOrientation(aUsers[0],joint,orient);
+	            XnFloat *e = orient.orientation.elements;
+
+                CharacterJoint *j = (CharacterJoint *)mcBundle->find_child(node.get_name());
+                LMatrix4f jmat = j->get_default_value();
+                LMatrix4f mat4 = node.get_mat();
+	            LMatrix3f mat = jmat.get_upper_3();
+	            LMatrix3f omat = LMatrix3f::ident_mat();
+                omat.set(e[0],-e[2],e[1],-e[6],e[8],-e[7],e[3],-e[5],e[4]);
+                LMatrix4f omat4 = LMatrix4f(omat);
+                mat *= omat;
+                mat4.set_upper_3(mat);
+                node.set_mat(mat4);
+        //	    LVecBase3f hpr = node.get_hpr();
+        //	    node.set_hpr(hpr.get_x(),hpr.get_y(),-hpr.get_z());
+	        }
+	    }
+	}
+
+    // Tell the task manager to continue this task the next frame.
+    return AsyncTask::DS_cont;
+}
+
 void printChildren(NodePath node)
 {
     NodePathCollection npc = node.get_children();
@@ -307,6 +358,22 @@ void printCharacterChildren(PartGroup* bundle)
     }
 }
 
+void addBones(PartGroup *bundle, NodePathCollection *collection)
+{
+    for (int i = 0; i < bundle->get_num_children(); i++) {
+        CharacterJoint *joint = (CharacterJoint *)bundle->get_child(i);
+        
+        std::cout << bundle->get_name() << " " << bundle->get_num_children() << " " << i << " " << joint->get_name() << "\n";
+        
+        NodePath bone = window->get_render().attach_new_node(joint->get_name());
+        mcBundle->control_joint(joint->get_name(), bone.node());
+        bone.set_mat(joint->get_default_value());
+        collection->append(bone);
+        
+        addBones(bundle->get_child(i), collection);
+    }
+}
+
 int main(int argc, char **argv)
 {
     framework.open_framework(argc, argv);
@@ -321,16 +388,17 @@ int main(int argc, char **argv)
     setupNI(xmlFile);
 
     framework.set_window_title("My Panda3D Window");
-    WindowFramework *window = framework.open_window();
+    window = framework.open_window();
     // Get the camera and store it in a variable.
     camera = window->get_camera_group();
-    camera.set_pos(0,-15,3);
+    camera.set_pos(0,-12,2);
     camera.set_hpr(0, 0, 0);
  
     // Load the environment model.
 //    NodePath environ = window->load_model(framework.get_models(), "models/environment");
-    NodePath environ = window->load_model(framework.get_models(), "MinecraftBody_bend.egg");
+    NodePath environ = window->load_model(framework.get_models(), "../new/MinecraftBody_bend.egg");
     environ.set_transparency(TransparencyAttrib::M_alpha);
+    environ.set_pos(0,0,0);
     
     PT(Texture) tex;
     tex = TexturePool::load_texture("Char.png");
@@ -341,28 +409,37 @@ int main(int argc, char **argv)
     // Reparent the model to render.
     environ.reparent_to(window->get_render());
     // Apply scale and position transforms to the model.
-//    environ.set_scale(0.25, 0.25, 0.25);
-//    environ.set_pos(-8, 42, 0);
  
     ModelRoot* eveN = (ModelRoot*)environ.node();
     NodePath eveChNP = environ.find("**/CharRig");      
     Character* eveCH = (Character*)eveChNP.node();
-    CharacterJointBundle* eveBundle = eveCH->get_bundle(0);
+    mcBundle = eveCH->get_bundle(0);
 
-    NodePath lArm = environ.attach_new_node("lArm");
-    eveBundle->control_joint("l_arm", lArm.node());
-    CharacterJoint *joint = (CharacterJoint *)eveBundle->find_child("l_arm");
-    lArm.set_mat(joint->get_default_value());
+    NodePath bone = window->get_render().attach_new_node("head");
+    mcBundle->control_joint("head", bone.node());
+    CharacterJoint *joint = (CharacterJoint *)mcBundle->find_child("head");
+    bone.set_mat(joint->get_default_value());
+    std::cout << joint->get_default_value() << "\n";
+//    taskMgr->add(new GenericAsyncTask("Moves a joint", &moveJoint, bone));
+
+//    bone = window->get_render().attach_new_node("body");
+//    mcBundle->control_joint("head", bone.node());
+//    CharacterJoint *joint = (CharacterJoint *)mcBundle->find_child("head");
+//    bone.set_mat(joint->get_default_value());
+//    std::cout << joint->get_default_value() << "\n";
+
+    NodePathCollection mcNodes = NodePathCollection();
 
     printChildren(environ);
-    printCharacterChildren(eveBundle);
+    printCharacterChildren(mcBundle);
+    addBones(mcBundle->find_child("<skeleton>"),&mcNodes);
  
     // Add our task.
     // If we specify custom data instead of NULL, it will be passed as the second argument
     // to the task function.
 //    taskMgr->add(new GenericAsyncTask("Spins the camera", &spinCameraTask, (void*) NULL));
     taskMgr->add(new GenericAsyncTask("Updates OpenNI data", &updateNI, (void*) NULL));
-    taskMgr->add(new GenericAsyncTask("Moves a joint", &moveJoint, &lArm));
+    taskMgr->add(new GenericAsyncTask("Moves a joint", &moveJoint, &mcNodes));
  
     // Run the engine.
     framework.main_loop();
