@@ -165,6 +165,25 @@ int setupNI(const char *xmlFile)
 	CHECK_RC(nRetVal, "Find image generator");
 	nRetVal = g_ImageGenerator.SetPixelFormat(XN_PIXEL_FORMAT_RGB24);
 	CHECK_RC(nRetVal, "Set image format");
+	
+    // Registration
+	if (g_DepthGenerator.IsCapabilitySupported(XN_CAPABILITY_ALTERNATIVE_VIEW_POINT))
+	{
+		nRetVal = g_DepthGenerator.GetAlternativeViewPointCap().SetViewPoint(g_ImageGenerator);
+		printf("Doing image registration\n");
+		CHECK_RC(nRetVal, "Registration");
+	}
+	// Frame Sync
+//	if (g_DepthGenerator.IsCapabilitySupported(XN_CAPABILITY_FRAME_SYNC))
+//	{
+//		if (g_DepthGenerator.GetFrameSyncCap().CanFrameSyncWith(g_ImageGenerator))
+//		{
+//			nRetVal = g_DepthGenerator.GetFrameSyncCap().FrameSyncWith(g_ImageGenerator);
+//			printf("Doing image sync\n");
+//			CHECK_RC(nRetVal, "Frame sync");
+//		}
+//	}
+	
 	nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_USER, g_UserGenerator);
 	if (nRetVal != XN_STATUS_OK)
 	{
@@ -230,7 +249,7 @@ AsyncTask::DoneStatus updateNI(GenericAsyncTask* task, void* data)
 	g_DepthGenerator.GetMetaData(depthMD);
 	g_UserGenerator.GetUserPixels(0, sceneMD);
 
-    static int stabilize = 10;
+    static int stabilize = 15;
     if (g_generate_texture == true && !stabilize-- && data) {
 
         

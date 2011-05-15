@@ -12,13 +12,19 @@ void XnToCV(const XnRGB24Pixel *input, cv::Mat *output)
     memcpy(output->data,input,sizeof(XnRGB24Pixel)*output->rows*output->cols);
 }
 
+// Getting zero points sometimes, so don't use them
+int PointIsValid(XnPoint3D point)
+{
+    return (point.X != 0.0) && (point.Y != 0.0) && (point.Z != 0.0);
+}
+
 XnPoint3D PointForJoint(XnUserID user, XnSkeletonJoint joint)
 {
     XnSkeletonJointPosition jointPos;
     g_UserGenerator.GetSkeletonCap().GetSkeletonJointPosition(user, joint, jointPos);
     XnPoint3D pt = jointPos.position;
     
-    printf("%f %f %f confidence %f\n",jointPos.position.X, jointPos.position.Y, jointPos.position.Z, jointPos.fConfidence);
+//    printf("%f %f %f confidence %f\n",jointPos.position.X, jointPos.position.Y, jointPos.position.Z, jointPos.fConfidence);
 
 	g_DepthGenerator.ConvertRealWorldToProjective(1, &pt, &pt);
 	
@@ -38,6 +44,7 @@ void GetLimb(XnUserID user, cv::Mat *body, cv::Mat *skin, XnSkeletonJoint joint1
 {
     XnPoint3D p1 = PointForJoint(user, joint1);
     XnPoint3D p2 = PointForJoint(user, joint2);
+    if (!PointIsValid(p1) || !PointIsValid(p2)) return;
     
     float dx = p1.X-p2.X;
     float dy = p1.Y-p2.Y;
@@ -45,6 +52,8 @@ void GetLimb(XnUserID user, cv::Mat *body, cv::Mat *skin, XnSkeletonJoint joint1
     dx /= l;
     dy /= l;
     
+//    printf("p1 (%f, %f) (%f, %f) (%f, %f) p2 (%f, %f) (%f, %f) (%f, %f)\n", p1.X+(w/2)*dy, p1.Y-(w/2)*dx, p1.X, p1.Y, p1.X-(w/2)*dy, p1.Y+(w/2)*dx,
+//    p2.X+(w/2)*dy, p2.Y-(w/2)*dx, p2.X, p2.Y, p2.X-(w/2)*dy, p2.Y+(w/2)*dx);
     cv::Point2f cameraPoints[] = {cv::Point2f(p1.X+(w/2)*dy, p1.Y-(w/2)*dx), cv::Point2f(p1.X-(w/2)*dy, p1.Y+(w/2)*dx),
                                   cv::Point2f(p2.X+(w/2)*dy, p2.Y-(w/2)*dx), cv::Point2f(p2.X-(w/2)*dy, p2.Y+(w/2)*dx)};
     
@@ -61,6 +70,8 @@ void GetLimb(XnUserID user, cv::Mat *body, cv::Mat *skin, XnSkeletonJoint joint1
 void GetEnd(XnUserID user, cv::Mat *body, cv::Mat *skin, XnSkeletonJoint joint, cv::Point2i pos)
 {
     XnPoint3D p = PointForJoint(user, joint);
+    if (!PointIsValid(p)) return;
+    
     int s = 2;
     
     cv::Point2f cameraPoints[] = {cv::Point2f(p.X-s, p.Y-s), cv::Point2f(p.X+s, p.Y-s), cv::Point2f(p.X-s, p.Y+s), cv::Point2f(p.X+s, p.Y+s)};
@@ -80,8 +91,9 @@ void GetTorso(XnUserID user, cv::Mat *body, cv::Mat *skin)
     XnPoint3D rs = PointForJoint(user, XN_SKEL_RIGHT_SHOULDER);
     XnPoint3D lh = PointForJoint(user, XN_SKEL_LEFT_HIP);
     XnPoint3D rh = PointForJoint(user, XN_SKEL_RIGHT_HIP);
+    if (!PointIsValid(ls) || !PointIsValid(rs) || !PointIsValid(lh) || !PointIsValid(rh)) return;
     
-    printf("(%f,%f,%f) (%f, %f, %f) (%f, %f, %f) (%f, %f, %f)\n", ls.X, ls.Y, ls.Z, rs.X, rs.Y, rs.Z, lh.X, lh.Y, lh.Z, rh.X, rh.Y, rh.Z);
+//    printf("(%f,%f,%f) (%f, %f, %f) (%f, %f, %f) (%f, %f, %f)\n", ls.X, ls.Y, ls.Z, rs.X, rs.Y, rs.Z, lh.X, lh.Y, lh.Z, rh.X, rh.Y, rh.Z);
     
     cv::Point2f cameraPoints[] = {cv::Point2f(ls.X, ls.Y), cv::Point2f(rs.X, rs.Y), cv::Point2f(lh.X, lh.Y), cv::Point2f(rh.X, rh.Y)};
     cv::Point2f skinPoints[] = {cv::Point2f(7, 0), cv::Point2f(0, 0), cv::Point2f(7, 11), cv::Point2f(0, 11)};
@@ -130,6 +142,56 @@ void GenerateSkin(XnUserID user, cv::Mat *body, cv::Mat *skin)
     GetEnd(user, body, skin, XN_SKEL_RIGHT_FOOT, cv::Point2i(8,16));
 }
 
+void DrawJointPoint(XnUserID user, cv::Mat *input, XnSkeletonJoint joint)
+{
+    XnPoint3D p = PointForJoint(user, joint);
+    if (!PointIsValid(p)) return;
+    cv::Point2i point = cv::Point2i(p.X, p.Y);
+
+    for(int y = point.y-1; y < point.y+2; y++) {
+        unsigned char *row = input->ptr<unsigned char>(y);
+        row+= (point.x-1)*3;
+        *row++ = 0;
+        *row++ = 0;
+        *row++ = 255;
+        *row++ = 0;
+        *row++ = 0;
+        *row++ = 255;
+        *row++ = 0;
+        *row++ = 0;
+        *row++ = 255;
+    }
+}
+
+void DrawDebugPoints(XnUserID user, cv::Mat *input)
+{
+    DrawJointPoint(user, input, XN_SKEL_RIGHT_SHOULDER);
+    DrawJointPoint(user, input, XN_SKEL_RIGHT_ELBOW);
+    DrawJointPoint(user, input, XN_SKEL_RIGHT_HAND);
+    DrawJointPoint(user, input, XN_SKEL_LEFT_SHOULDER);
+    DrawJointPoint(user, input, XN_SKEL_LEFT_ELBOW);
+    DrawJointPoint(user, input, XN_SKEL_LEFT_HAND);
+}
+
+void SegmentUser(XnUserID user, cv::Mat *input, const xn::SceneMetaData& smd)
+{
+    const XnLabel* pLabels = smd.Data();
+
+    for(int y = 0; y < input->rows; y++) {
+        unsigned char *row = input->ptr<unsigned char>(y);
+        for (int x = 0; x < input->cols; x++) {
+            XnLabel label = *pLabels++;
+            if (label != user) {
+                *row++ = 0;
+                *row++ = 0;
+                *row++ = 0;
+            } else {
+                row+=3;
+            }
+        }
+    }
+}
+
 void GenerateMinecraftCharacter(const xn::DepthMetaData& dmd, const xn::SceneMetaData& smd, const XnRGB24Pixel* image)
 {
     int xRes = dmd.XRes();
@@ -139,7 +201,7 @@ void GenerateMinecraftCharacter(const xn::DepthMetaData& dmd, const xn::SceneMet
     cv::Mat skin = cv::Mat::zeros(cv::Size(64,32), CV_8UC3);
     XnToCV(image,&inputImage);
     cv::cvtColor(inputImage,inputImage,CV_RGB2BGR);
-    cv::imwrite("blah.png",inputImage);
+    
     
     XnUserID aUsers[15];
 	XnUInt16 nUsers = 15;
@@ -154,4 +216,8 @@ void GenerateMinecraftCharacter(const xn::DepthMetaData& dmd, const xn::SceneMet
 	
 	GenerateSkin(aUsers[i], &inputImage, &skin);
 	cv::imwrite("skin.png",skin);
+	SegmentUser(aUsers[i], &inputImage, smd);
+	DrawDebugPoints(aUsers[i], &inputImage);
+	cv::imwrite("blah.png",inputImage);
+	sync();
 }
