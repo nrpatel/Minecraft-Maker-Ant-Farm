@@ -25,7 +25,7 @@
 #include <XnOpenNI.h>
 #include <XnCodecIDs.h>
 #include <XnCppWrapper.h>
-#include "SceneDrawer.h"
+#include "MinecraftGenerator.h"
 #include <pandaFramework.h>
 #include <pandaSystem.h>
 #include <genericAsyncTask.h>
@@ -54,6 +54,7 @@ CharacterJointBundle* mcBundle;
 xn::Context g_Context;
 xn::DepthGenerator g_DepthGenerator;
 xn::UserGenerator g_UserGenerator;
+xn::ImageGenerator g_ImageGenerator;
 
 XnBool g_bNeedPose = FALSE;
 XnChar g_strPose[20] = "";
@@ -67,6 +68,8 @@ XnBool g_bPause = false;
 XnBool g_bRecord = false;
 
 XnBool g_bQuit = false;
+
+XnBool g_generate_texture = false;
 
 //---------------------------------------------------------------------------
 // Code
@@ -111,6 +114,7 @@ void XN_CALLBACK_TYPE UserCalibration_CalibrationEnd(xn::SkeletonCapability& cap
 		// Calibration succeeded
 		printf("Calibration complete, start tracking user %d\n", nId);
 		g_UserGenerator.GetSkeletonCap().StartTracking(nId);
+		g_generate_texture = true;
 	}
 	else
 	{
@@ -124,49 +128,6 @@ void XN_CALLBACK_TYPE UserCalibration_CalibrationEnd(xn::SkeletonCapability& cap
 		{
 			g_UserGenerator.GetSkeletonCap().RequestCalibration(nId, TRUE);
 		}
-	}
-}
-
-#define XN_CALIBRATION_FILE_NAME "UserCalibration.bin"
-
-// Save calibration to file
-void SaveCalibration()
-{
-	XnUserID aUserIDs[20] = {0};
-	XnUInt16 nUsers = 20;
-	g_UserGenerator.GetUsers(aUserIDs, nUsers);
-	for (int i = 0; i < nUsers; ++i)
-	{
-		// Find a user who is already calibrated
-		if (g_UserGenerator.GetSkeletonCap().IsCalibrated(aUserIDs[i]))
-		{
-			// Save user's calibration to file
-			g_UserGenerator.GetSkeletonCap().SaveCalibrationDataToFile(aUserIDs[i], XN_CALIBRATION_FILE_NAME);
-			break;
-		}
-	}
-}
-// Load calibration from file
-void LoadCalibration()
-{
-	XnUserID aUserIDs[20] = {0};
-	XnUInt16 nUsers = 20;
-	g_UserGenerator.GetUsers(aUserIDs, nUsers);
-	for (int i = 0; i < nUsers; ++i)
-	{
-		// Find a user who isn't calibrated or currently in pose
-		if (g_UserGenerator.GetSkeletonCap().IsCalibrated(aUserIDs[i])) continue;
-		if (g_UserGenerator.GetSkeletonCap().IsCalibrating(aUserIDs[i])) continue;
-
-		// Load user's calibration from file
-		XnStatus rc = g_UserGenerator.GetSkeletonCap().LoadCalibrationDataFromFile(aUserIDs[i], XN_CALIBRATION_FILE_NAME);
-		if (rc == XN_STATUS_OK)
-		{
-			// Make sure state is coherent
-			g_UserGenerator.GetPoseDetectionCap().StopPoseDetection(aUserIDs[i]);
-			g_UserGenerator.GetSkeletonCap().StartTracking(aUserIDs[i]);
-		}
-		break;
 	}
 }
 
@@ -200,6 +161,10 @@ int setupNI(const char *xmlFile)
 
 	nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_DEPTH, g_DepthGenerator);
 	CHECK_RC(nRetVal, "Find depth generator");
+	nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_IMAGE, g_ImageGenerator);
+	CHECK_RC(nRetVal, "Find image generator");
+	nRetVal = g_ImageGenerator.SetPixelFormat(XN_PIXEL_FORMAT_RGB24);
+	CHECK_RC(nRetVal, "Set image format");
 	nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_USER, g_UserGenerator);
 	if (nRetVal != XN_STATUS_OK)
 	{
@@ -264,8 +229,21 @@ AsyncTask::DoneStatus updateNI(GenericAsyncTask* task, void* data)
 	// Process the data
 	g_DepthGenerator.GetMetaData(depthMD);
 	g_UserGenerator.GetUserPixels(0, sceneMD);
-//	printf("in updateNI\n");
-//	DrawDepthMap(depthMD, sceneMD);
+
+    static int stabilize = 10;
+    if (g_generate_texture == true && !stabilize-- && data) {
+
+        
+    
+        NodePath character = *(NodePath *)data;
+        Texture *tex = TexturePool::load_texture("../skin.png");
+        tex->set_magfilter(Texture::FT_nearest);
+        character.set_texture(tex, 1);
+        
+        GenerateMinecraftCharacter(depthMD, sceneMD, g_ImageGenerator.GetRGB24ImageMap());
+        stabilize = 10;
+        g_generate_texture = false;
+    }
 
     return AsyncTask::DS_cont;
 }
@@ -331,6 +309,7 @@ AsyncTask::DoneStatus moveJoint(GenericAsyncTask* task, void* data)
                 mat *= omat;
                 mat4.set_upper_3(mat);
                 node.set_mat(mat4);
+        //      node.set_r(-node.get_r());
         //	    LVecBase3f hpr = node.get_hpr();
         //	    node.set_hpr(hpr.get_x(),hpr.get_y(),-hpr.get_z());
 	        }
@@ -403,7 +382,6 @@ int main(int argc, char **argv)
     PT(Texture) tex;
     tex = TexturePool::load_texture("Char.png");
     tex->set_magfilter(Texture::FT_nearest);
-    printf("texture alpha %d\n",(int)tex->has_alpha(tex->get_format()));
     environ.set_texture(tex, 1);
     
     // Reparent the model to render.
@@ -415,11 +393,11 @@ int main(int argc, char **argv)
     Character* eveCH = (Character*)eveChNP.node();
     mcBundle = eveCH->get_bundle(0);
 
-    NodePath bone = window->get_render().attach_new_node("head");
-    mcBundle->control_joint("head", bone.node());
-    CharacterJoint *joint = (CharacterJoint *)mcBundle->find_child("head");
-    bone.set_mat(joint->get_default_value());
-    std::cout << joint->get_default_value() << "\n";
+//    NodePath bone = window->get_render().attach_new_node("head");
+//    mcBundle->control_joint("head", bone.node());
+//    CharacterJoint *joint = (CharacterJoint *)mcBundle->find_child("head");
+//    bone.set_mat(joint->get_default_value());
+//    std::cout << joint->get_default_value() << "\n";
 //    taskMgr->add(new GenericAsyncTask("Moves a joint", &moveJoint, bone));
 
 //    bone = window->get_render().attach_new_node("body");
@@ -438,7 +416,7 @@ int main(int argc, char **argv)
     // If we specify custom data instead of NULL, it will be passed as the second argument
     // to the task function.
 //    taskMgr->add(new GenericAsyncTask("Spins the camera", &spinCameraTask, (void*) NULL));
-    taskMgr->add(new GenericAsyncTask("Updates OpenNI data", &updateNI, (void*) NULL));
+    taskMgr->add(new GenericAsyncTask("Updates OpenNI data", &updateNI, &environ));
     taskMgr->add(new GenericAsyncTask("Moves a joint", &moveJoint, &mcNodes));
  
     // Run the engine.
