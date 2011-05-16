@@ -85,6 +85,82 @@ void GetEnd(XnUserID user, cv::Mat *body, cv::Mat *skin, XnSkeletonJoint joint, 
     CopyBodyPart(&transformed, skin, pos);
 }
 
+void CleanFace(cv::Mat *face)
+{
+    // Add some eyes
+    unsigned char *row = face->ptr<unsigned char>(3);
+    row += 3;
+    *row++ = 200;
+    *row++ = 200;
+    *row++ = 200;
+    *row++ = 0x02;
+    *row++ = 0x08;
+    *row++ = 0x10;
+    row += 6;
+    *row++ = 0x02;
+    *row++ = 0x08;
+    *row++ = 0x10;
+    *row++ = 200;
+    *row++ = 200;
+    *row++ = 200;
+}
+
+void GetHead(XnUserID user, cv::Mat *body, cv::Mat *skin)
+{
+    XnPoint3D h = PointForJoint(user, XN_SKEL_HEAD);
+    if (!PointIsValid(h)) return;
+    
+    int w = 12;
+    cv::Point2f tl = cv::Point2f(h.X+w, h.Y-w*2.0);
+    cv::Point2f tr = cv::Point2f(h.X-w, h.Y-w*2.0);
+    cv::Point2f bl = cv::Point2f(h.X+w*0.75, h.Y+w*1.5);
+    cv::Point2f br = cv::Point2f(h.X-w*0.75, h.Y+w*1.5);
+    
+    cv::Point2f xoffset = cv::Point2f(1.0, 0.0);
+    cv::Point2f yoffset = cv::Point2f(0.0, 1.0);
+    
+    cv::Point2f facePoints[] = {tl, tr, bl, br};
+    cv::Point2f leftPoints[] = {tl+xoffset*4.0, tl, bl+xoffset*4.0, bl};
+    cv::Point2f rightPoints[] = {tr, tr-xoffset*4.0, br, br-xoffset*4.0};
+    cv::Point2f topPoints[] = {tl-yoffset*4.0, tr-yoffset*4.0, tl, tr};
+    cv::Point2f bottomPoints[] = {bl, br, bl+yoffset*4.0, br+yoffset*4.0};
+    
+    cv::Point2f skinPoints[] = {cv::Point2f(7, 0), cv::Point2f(0, 0), cv::Point2f(7, 7), cv::Point2f(0, 7)};
+    cv::Size size = cv::Size(8, 8);
+    
+    cv::Mat transform = cv::getPerspectiveTransform(facePoints, skinPoints);
+    cv::Mat transformed = cv::Mat(size, CV_8UC3);
+    cv::warpPerspective(*body, transformed, transform, size);
+    CleanFace(&transformed);
+    CopyBodyPart(&transformed, skin, cv::Point2i(8, 8));
+    
+    transform = cv::getPerspectiveTransform(leftPoints, skinPoints);
+    transformed = cv::Mat(size, CV_8UC3);
+    cv::warpPerspective(*body, transformed, transform, size);
+    CopyBodyPart(&transformed, skin, cv::Point2i(16, 8));
+    
+    transform = cv::getPerspectiveTransform(rightPoints, skinPoints);
+    transformed = cv::Mat(size, CV_8UC3);
+    cv::warpPerspective(*body, transformed, transform, size);
+    CopyBodyPart(&transformed, skin, cv::Point2i(0, 8));
+    
+    transform = cv::getPerspectiveTransform(topPoints, skinPoints);
+    transformed = cv::Mat(size, CV_8UC3);
+    cv::warpPerspective(*body, transformed, transform, size);
+    CopyBodyPart(&transformed, skin, cv::Point2i(8, 0));
+    
+    // Use the forehead/top area as the back as well
+    transform = cv::getPerspectiveTransform(topPoints, skinPoints);
+    transformed = cv::Mat(size, CV_8UC3);
+    cv::warpPerspective(*body, transformed, transform, size);
+    CopyBodyPart(&transformed, skin, cv::Point2i(24, 8));
+    
+    transform = cv::getPerspectiveTransform(bottomPoints, skinPoints);
+    transformed = cv::Mat(size, CV_8UC3);
+    cv::warpPerspective(*body, transformed, transform, size);
+    CopyBodyPart(&transformed, skin, cv::Point2i(16, 0));
+}
+
 void GetTorso(XnUserID user, cv::Mat *body, cv::Mat *skin)
 {
     XnPoint3D ls = PointForJoint(user, XN_SKEL_LEFT_SHOULDER);
@@ -110,10 +186,13 @@ void GetTorso(XnUserID user, cv::Mat *body, cv::Mat *skin)
 
 void GenerateSkin(XnUserID user, cv::Mat *body, cv::Mat *skin)
 {
+    // Head
+    GetHead(user, body, skin);
+
     // Torso and sides
     GetTorso(user, body, skin);
-    GetLimb(user, body, skin, XN_SKEL_RIGHT_SHOULDER, XN_SKEL_RIGHT_HIP, 6, cv::Size(4,8), cv::Point2i(16,20));
-    GetLimb(user, body, skin, XN_SKEL_LEFT_SHOULDER, XN_SKEL_LEFT_HIP, 6, cv::Size(4,8), cv::Point2i(28,20));
+    GetLimb(user, body, skin, XN_SKEL_RIGHT_SHOULDER, XN_SKEL_RIGHT_HIP, 6, cv::Size(4,12), cv::Point2i(16,20));
+    GetLimb(user, body, skin, XN_SKEL_LEFT_SHOULDER, XN_SKEL_LEFT_HIP, 6, cv::Size(4,12), cv::Point2i(28,20));
     GetLimb(user, body, skin, XN_SKEL_RIGHT_SHOULDER, XN_SKEL_LEFT_SHOULDER, 6, cv::Size(8,4), cv::Point2i(20,16));
     GetLimb(user, body, skin, XN_SKEL_RIGHT_HIP, XN_SKEL_LEFT_HIP, 6, cv::Size(8,4), cv::Point2i(28,16));
     
@@ -165,6 +244,8 @@ void DrawJointPoint(XnUserID user, cv::Mat *input, XnSkeletonJoint joint)
 
 void DrawDebugPoints(XnUserID user, cv::Mat *input)
 {
+    DrawJointPoint(user, input, XN_SKEL_HEAD);
+    DrawJointPoint(user, input, XN_SKEL_NECK);
     DrawJointPoint(user, input, XN_SKEL_RIGHT_SHOULDER);
     DrawJointPoint(user, input, XN_SKEL_RIGHT_ELBOW);
     DrawJointPoint(user, input, XN_SKEL_RIGHT_HAND);
@@ -220,4 +301,5 @@ void GenerateMinecraftCharacter(const xn::DepthMetaData& dmd, const xn::SceneMet
 	DrawDebugPoints(aUsers[i], &inputImage);
 	cv::imwrite("blah.png",inputImage);
 	sync();
+	system("convert skin.png -transparent black skin.png && composite -geometry +32+0 hardhat.png skin.png skin.png");
 }

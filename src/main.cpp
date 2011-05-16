@@ -218,6 +218,20 @@ int setupNI(const char *xmlFile)
 	CHECK_RC(nRetVal, "StartGenerating");
 }
 
+void resetUsers(const Event * theEvent, void * data)
+{
+    XnUserID aUsers[15];
+	XnUInt16 nUsers = 15;
+	g_UserGenerator.GetUsers(aUsers, nUsers);
+	int i = 0;
+	for (i = 0; i < nUsers; ++i) {
+	    g_UserGenerator.GetSkeletonCap().Reset(aUsers[i]);
+	    g_UserGenerator.GetPoseDetectionCap().StartPoseDetection(g_strPose, aUsers[i]);
+	}
+
+    printf("Restarting UserGenerator\n");
+}
+
 // This is our task - a global or static function that has to return DoneStatus.
 // The task object is passed as argument, plus a void* pointer, cointaining custom data.
 // For more advanced usage, we can subclass AsyncTask and override the do_task method.
@@ -252,15 +266,18 @@ AsyncTask::DoneStatus updateNI(GenericAsyncTask* task, void* data)
     static int stabilize = 15;
     if (g_generate_texture == true && !stabilize-- && data) {
 
-        
+        printf("Generating texture\n");
+
+        GenerateMinecraftCharacter(depthMD, sceneMD, g_ImageGenerator.GetRGB24ImageMap());
     
         NodePath character = *(NodePath *)data;
+        TexturePool::release_all_textures();
         Texture *tex = TexturePool::load_texture("../skin.png");
+        TexturePool::list_contents();
         tex->set_magfilter(Texture::FT_nearest);
         character.set_texture(tex, 1);
         
-        GenerateMinecraftCharacter(depthMD, sceneMD, g_ImageGenerator.GetRGB24ImageMap());
-        stabilize = 10;
+        stabilize = 15;
         g_generate_texture = false;
     }
 
@@ -385,7 +402,7 @@ int main(int argc, char **argv)
 
     setupNI(xmlFile);
 
-    framework.set_window_title("My Panda3D Window");
+    framework.set_window_title("Maker Ant Farm");
     window = framework.open_window();
     // Get the camera and store it in a variable.
     camera = window->get_camera_group();
@@ -437,6 +454,10 @@ int main(int argc, char **argv)
 //    taskMgr->add(new GenericAsyncTask("Spins the camera", &spinCameraTask, (void*) NULL));
     taskMgr->add(new GenericAsyncTask("Updates OpenNI data", &updateNI, &environ));
     taskMgr->add(new GenericAsyncTask("Moves a joint", &moveJoint, &mcNodes));
+    window->enable_keyboard();
+
+    // Let's say I wanna get the key "w"
+    framework.define_key("r", "Reset", resetUsers, NULL); 
  
     // Run the engine.
     framework.main_loop();
