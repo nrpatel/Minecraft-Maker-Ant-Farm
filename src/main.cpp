@@ -52,6 +52,7 @@ PT(ClockObject) globalClock = ClockObject::get_global_clock();
 NodePath camera;
 WindowFramework* window;
 CharacterJointBundle* mcBundle;
+TextNode *text;
 
 xn::Context g_Context;
 xn::DepthGenerator g_DepthGenerator;
@@ -73,6 +74,14 @@ XnBool g_bQuit = false;
 
 XnBool g_generate_texture = false;
 XnBool g_reset = false;
+
+enum {
+    ANT_FARM_WAITING = 0,
+    ANT_FARM_CALIBRATING = 1,
+    ANT_FARM_TRACKING = 2
+};
+
+int app_state = ANT_FARM_WAITING;
 
 //---------------------------------------------------------------------------
 // Code
@@ -108,6 +117,10 @@ void XN_CALLBACK_TYPE UserPose_PoseDetected(xn::PoseDetectionCapability& capabil
 void XN_CALLBACK_TYPE UserCalibration_CalibrationStart(xn::SkeletonCapability& capability, XnUserID nId, void* pCookie)
 {
 	printf("Calibration started for user %d\n", nId);
+	if (app_state == ANT_FARM_WAITING) {
+	    text->set_text("Calibrating...");
+	    app_state = ANT_FARM_CALIBRATING;
+	}
 }
 // Callback: Finished calibration
 void XN_CALLBACK_TYPE UserCalibration_CalibrationEnd(xn::SkeletonCapability& capability, XnUserID nId, XnBool bSuccess, void* pCookie)
@@ -117,10 +130,16 @@ void XN_CALLBACK_TYPE UserCalibration_CalibrationEnd(xn::SkeletonCapability& cap
 		// Calibration succeeded
 		printf("Calibration complete, start tracking user %d\n", nId);
 		g_UserGenerator.GetSkeletonCap().StartTracking(nId);
+		text->set_text("Enter Twitter handle, email address, or whatev");
+		app_state = ANT_FARM_TRACKING;
 		g_generate_texture = true;
 	}
 	else
 	{
+	    if (app_state == ANT_FARM_CALIBRATING) {
+	        text->set_text("Looking for user...");
+	        app_state = ANT_FARM_WAITING;
+	    }
 		// Calibration failed
 		printf("Calibration failed for user %d\n", nId);
 		if (g_bNeedPose)
@@ -222,6 +241,8 @@ void resetUsers(const Event *theEvent, void *data)
 	    g_UserGenerator.GetPoseDetectionCap().StartPoseDetection(g_strPose, aUsers[i]);
 	}
 	
+	text->set_text("Looking for user...");
+	app_state = ANT_FARM_WAITING;
 	g_reset = true;
 
     printf("Restarting UserGenerator\n");
@@ -467,8 +488,14 @@ int main(int argc, char **argv)
     NodePath inputNP = window->get_aspect_2d().attach_new_node(input);
     framework.get_event_handler().add_hook(input->get_accept_event(KeyboardButton::enter()), acceptEntry, &inputNP);
     inputNP.set_scale(0.1);
-    inputNP.set_pos(-0.9,-0.9,-0.9);
+    inputNP.set_pos(-0.9,0.0,-0.9);
 //    inputNP.hide();
+ 
+    text = new TextNode("Instructions");
+    text->set_text("Looking for user...");
+    NodePath textNodePath = window->get_aspect_2d().attach_new_node(text);
+    textNodePath.set_scale(0.1);
+    textNodePath.set_pos(-0.9,0.0,-0.75);
  
     // Add our task.
     // If we specify custom data instead of NULL, it will be passed as the second argument
