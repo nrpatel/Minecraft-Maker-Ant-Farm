@@ -38,6 +38,7 @@
 #include <modelRoot.h>
 #include <lmatrix.h>
 #include <pgEntry.h>
+#include <keyboardButton.h>
 
 //---------------------------------------------------------------------------
 // Globals
@@ -71,6 +72,7 @@ XnBool g_bRecord = false;
 XnBool g_bQuit = false;
 
 XnBool g_generate_texture = false;
+XnBool g_reset = false;
 
 //---------------------------------------------------------------------------
 // Code
@@ -209,14 +211,6 @@ int setupNI(const char *xmlFile)
 	CHECK_RC(nRetVal, "StartGenerating");
 }
 
-void resetEntry(const Event *theEvent, void *data)
-{
-    NodePath inputNP = window->get_aspect_2d().find_child("Name Input");
-    inputNP.hide();
-    PT(PGEntry) input = inputNP.node();
-    
-}
-
 void resetUsers(const Event *theEvent, void *data)
 {
     XnUserID aUsers[15];
@@ -227,8 +221,20 @@ void resetUsers(const Event *theEvent, void *data)
 	    g_UserGenerator.GetSkeletonCap().Reset(aUsers[i]);
 	    g_UserGenerator.GetPoseDetectionCap().StartPoseDetection(g_strPose, aUsers[i]);
 	}
+	
+	g_reset = true;
 
     printf("Restarting UserGenerator\n");
+}
+
+void acceptEntry(const Event *theEvent, void *data)
+{
+    NodePath *inputNP = (NodePath *)data;
+    PGEntry *input = (PGEntry *)inputNP->node();
+    std::cout << input->get_text() << "\n";
+    input->set_text("");
+    input->set_focus(true);
+    resetUsers(NULL, NULL);
 }
 
 // This is our task - a global or static function that has to return DoneStatus.
@@ -272,12 +278,20 @@ AsyncTask::DoneStatus updateNI(GenericAsyncTask* task, void* data)
         NodePath character = *(NodePath *)data;
         TexturePool::release_all_textures();
         Texture *tex = TexturePool::load_texture("../skin.png");
-        TexturePool::list_contents();
         tex->set_magfilter(Texture::FT_nearest);
         character.set_texture(tex, 1);
         
         stabilize = 15;
         g_generate_texture = false;
+    }
+    
+    if (g_reset == true && data) {
+        NodePath character = *(NodePath *)data;
+        PT(Texture) tex;
+        tex = TexturePool::load_texture("Char.png");
+        tex->set_magfilter(Texture::FT_nearest);
+        character.set_texture(tex, 1);
+        g_reset = false;
     }
 
     return AsyncTask::DS_cont;
@@ -451,9 +465,10 @@ int main(int argc, char **argv)
     input->setup(19, 1);
     input->set_focus(true);
     NodePath inputNP = window->get_aspect_2d().attach_new_node(input);
+    framework.get_event_handler().add_hook(input->get_accept_event(KeyboardButton::enter()), acceptEntry, &inputNP);
     inputNP.set_scale(0.1);
     inputNP.set_pos(-0.9,-0.9,-0.9);
-    inputNP.hide();
+//    inputNP.hide();
  
     // Add our task.
     // If we specify custom data instead of NULL, it will be passed as the second argument
