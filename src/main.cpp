@@ -37,6 +37,7 @@
 #include <characterJointBundle.h>
 #include <modelRoot.h>
 #include <lmatrix.h>
+#include <pgEntry.h>
 
 //---------------------------------------------------------------------------
 // Globals
@@ -173,16 +174,6 @@ int setupNI(const char *xmlFile)
 		printf("Doing image registration\n");
 		CHECK_RC(nRetVal, "Registration");
 	}
-	// Frame Sync
-//	if (g_DepthGenerator.IsCapabilitySupported(XN_CAPABILITY_FRAME_SYNC))
-//	{
-//		if (g_DepthGenerator.GetFrameSyncCap().CanFrameSyncWith(g_ImageGenerator))
-//		{
-//			nRetVal = g_DepthGenerator.GetFrameSyncCap().FrameSyncWith(g_ImageGenerator);
-//			printf("Doing image sync\n");
-//			CHECK_RC(nRetVal, "Frame sync");
-//		}
-//	}
 	
 	nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_USER, g_UserGenerator);
 	if (nRetVal != XN_STATUS_OK)
@@ -218,7 +209,15 @@ int setupNI(const char *xmlFile)
 	CHECK_RC(nRetVal, "StartGenerating");
 }
 
-void resetUsers(const Event * theEvent, void * data)
+void resetEntry(const Event *theEvent, void *data)
+{
+    NodePath inputNP = window->get_aspect_2d().find_child("Name Input");
+    inputNP.hide();
+    PT(PGEntry) input = inputNP.node();
+    
+}
+
+void resetUsers(const Event *theEvent, void *data)
 {
     XnUserID aUsers[15];
 	XnUInt16 nUsers = 15;
@@ -448,6 +447,14 @@ int main(int argc, char **argv)
     printCharacterChildren(mcBundle);
     addBones(mcBundle->find_child("<skeleton>"),&mcNodes);
  
+    PT(PGEntry) input = new PGEntry("Name Input");
+    input->setup(19, 1);
+    input->set_focus(true);
+    NodePath inputNP = window->get_aspect_2d().attach_new_node(input);
+    inputNP.set_scale(0.1);
+    inputNP.set_pos(-0.9,-0.9,-0.9);
+    inputNP.hide();
+ 
     // Add our task.
     // If we specify custom data instead of NULL, it will be passed as the second argument
     // to the task function.
@@ -456,8 +463,7 @@ int main(int argc, char **argv)
     taskMgr->add(new GenericAsyncTask("Moves a joint", &moveJoint, &mcNodes));
     window->enable_keyboard();
 
-    // Let's say I wanna get the key "w"
-    framework.define_key("r", "Reset", resetUsers, NULL); 
+    framework.define_key("f1", "Reset", resetUsers, NULL);
  
     // Run the engine.
     framework.main_loop();
