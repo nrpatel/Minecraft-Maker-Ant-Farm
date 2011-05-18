@@ -26,6 +26,7 @@
 #include <XnCodecIDs.h>
 #include <XnCppWrapper.h>
 #include "MinecraftGenerator.h"
+#include "SendCharacter.h"
 #include <pandaFramework.h>
 #include <pandaSystem.h>
 #include <genericAsyncTask.h>
@@ -253,8 +254,14 @@ void acceptEntry(const Event *theEvent, void *data)
     NodePath *inputNP = (NodePath *)data;
     PGEntry *input = (PGEntry *)inputNP->node();
     std::cout << input->get_text() << "\n";
+    
+    if (input->get_text().length()) {
+        SendCharacter("skin.png",input->get_text().c_str());
+    }
+    
     input->set_text("");
     input->set_focus(true);
+    
     resetUsers(NULL, NULL);
 }
 
@@ -425,6 +432,7 @@ void addBones(PartGroup *bundle, NodePathCollection *collection)
 
 int main(int argc, char **argv)
 {
+    SendCharacterInit();
     framework.open_framework(argc, argv);
 
     const char *xmlFile = SAMPLE_XML_PATH;
@@ -511,5 +519,6 @@ int main(int argc, char **argv)
     framework.main_loop();
     // Shut down the engine when done.
     framework.close_framework();
+    SendCharacterCleanup();
     return (0);
 }

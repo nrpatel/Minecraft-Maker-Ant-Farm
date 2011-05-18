@@ -2,14 +2,15 @@
 
 CC=g++
 
-OTHERS      = -lcv -lhighgui -lglut -lXnVNite -lOpenNI -lp3framework -lpanda   \
+OTHERS      = -lcurl -lcv -lhighgui -lglut -lXnVNite -lOpenNI -lp3framework -lpanda   \
      -lpandafx -lpandaexpress -lp3dtoolconfig -lp3dtool -lp3pystub -lp3direct
 
 LIBNAME     = $(OTHERS)
 
 LIBRARYPATH = -L/usr/lib/panda3d/
               
-INCLUDEPATH = -I/usr/include/opencv                     \
+INCLUDEPATH = -I/usr/include/curl/                      \
+              -I/usr/include/opencv/                    \
               -I/usr/include/nite/                      \
               -I/usr/include/ni/                        \
               -I/usr/include/panda3d/                   \
@@ -21,7 +22,7 @@ CFLAGS      = $(LIBPATH) -ggdb -o0 $(INCLUDEPATH)
 # RELEASE
 #CFLAGS      = $(LIBPATH) -o3 $(INCLUDEPATH)
 
-SRCS        = $(wildcard src/*.cpp)
+SRCS        = src/SendCharacter.c $(wildcard src/*.cpp)
 
 OBJS        = $(SRCS:.cpp=.o)
 
