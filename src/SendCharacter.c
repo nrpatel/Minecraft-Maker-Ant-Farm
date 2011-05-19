@@ -8,7 +8,7 @@
 #include <curl/curl.h>
 
 #define MAX_URL_LENGTH 1024
-#define DEFAULT_SERVER "http://mediabox:9090/add_player/"
+#define DEFAULT_SERVER "http://192.168.1.6/add_player/"
 
 int SendCharacterInit()
 {
