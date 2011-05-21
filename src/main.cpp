@@ -524,7 +524,7 @@ AsyncTask::DoneStatus updatePreview(GenericAsyncTask* task, void* data)
                 XnLabel label = *pLabels++;
                 XnUInt32 nColorID = label % nUserColors;
                 if (!label) {
-                    bgimage.set_xel_val(x, y, 128, 128, 128);
+                    bgimage.set_xel_val(x, y, 0x66, 0x66, 0x66);
                 } else {
                     bgimage.set_xel_val(x, y, UserColors[nColorID][0], UserColors[nColorID][1], UserColors[nColorID][2]);
                 }
