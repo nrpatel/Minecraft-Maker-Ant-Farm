@@ -40,6 +40,8 @@
 #include <lmatrix.h>
 #include <pgEntry.h>
 #include <keyboardButton.h>
+#include <pnmImage.h>
+#include <cardMaker.h>
 
 //---------------------------------------------------------------------------
 // Globals
@@ -54,6 +56,7 @@ NodePath camera;
 WindowFramework* window;
 CharacterJointBundle* mcBundle;
 TextNode *text;
+PNMImage bgimage;
 
 xn::Context g_Context;
 xn::DepthGenerator g_DepthGenerator;
@@ -432,6 +435,48 @@ AsyncTask::DoneStatus moveJoint(GenericAsyncTask* task, void* data)
     return AsyncTask::DS_cont;
 }
 
+unsigned char UserColors[][3] =
+{
+	{0,255,255},
+	{0,0,255},
+	{0,255,0},
+	{255,255,0},
+	{255,0,0},
+	{255,128,0},
+	{128,255,0},
+	{0,128,255},
+	{128,0,255},
+	{255,255,128},
+	{255,255,255}
+};
+int nUserColors = 10;
+
+AsyncTask::DoneStatus updatePreview(GenericAsyncTask* task, void* data)
+{
+    if (data) {
+        Texture *tex = (Texture *)data;
+        xn::SceneMetaData sceneMD;
+        g_UserGenerator.GetUserPixels(0, sceneMD);
+        const XnLabel* pLabels = sceneMD.Data();
+
+        for(int y = 0; y < 480; y++) {
+            for (int x = 0; x < 640; x++) {
+                XnLabel label = *pLabels++;
+                XnUInt32 nColorID = label % nUserColors;
+                if (!label) {
+                    bgimage.set_xel_val(x, y, 128, 128, 128);
+                } else {
+                    bgimage.set_xel_val(x, y, UserColors[nColorID][0], UserColors[nColorID][1], UserColors[nColorID][2]);
+                }
+            }
+        }
+        
+        tex->load(bgimage);
+	}
+    
+    return AsyncTask::DS_cont;
+}
+
 void printChildren(NodePath node)
 {
     NodePathCollection npc = node.get_children();
@@ -466,6 +511,7 @@ void addBones(PartGroup *bundle, NodePathCollection *collection, NodePath *node)
     }
 }
 
+
 int main(int argc, char **argv)
 {
     SendCharacterInit();
@@ -489,6 +535,18 @@ int main(int argc, char **argv)
     camera = window->get_camera_group();
     camera.set_pos(0,-12,2);
     camera.set_hpr(0, 0, 0);
+ 
+    bgimage = PNMImage(640, 480);
+    Texture bgtex("bgtexture");
+    bgtex.load(bgimage);
+    TexturePool::add_texture(&bgtex);
+    CardMaker cm("cardMaker");
+    PT(PandaNode) bgcard = cm.generate();
+    NodePath bgpath(bgcard);
+    bgpath.set_texture(&bgtex, 1);
+    bgpath.set_scale(0.5);
+    bgpath.set_pos(-0.9,0.0,0.25);
+    bgpath.reparent_to(window->get_render_2d());
  
     // Load the environment model.
 //    NodePath environ = window->load_model(framework.get_models(), "models/environment");
@@ -551,6 +609,7 @@ int main(int argc, char **argv)
 //    taskMgr->add(new GenericAsyncTask("Spins the camera", &spinCameraTask, (void*) NULL));
     taskMgr->add(new GenericAsyncTask("Updates OpenNI data", &updateNI, &environ));
     taskMgr->add(new GenericAsyncTask("Moves a joint", &moveJoint, &mcNodes));
+    taskMgr->add(new GenericAsyncTask("Updates preview", &updatePreview, &bgtex));
     window->enable_keyboard();
 
     framework.define_key("f1", "Reset", resetUsers, NULL);
