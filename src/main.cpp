@@ -83,6 +83,7 @@ enum {
 };
 
 int app_state = ANT_FARM_WAITING;
+#define STABILIZE_COUNT (8)
 
 //---------------------------------------------------------------------------
 // Code
@@ -296,21 +297,23 @@ AsyncTask::DoneStatus updateNI(GenericAsyncTask* task, void* data)
 	g_DepthGenerator.GetMetaData(depthMD);
 	g_UserGenerator.GetUserPixels(0, sceneMD);
 
-    static int stabilize = 15;
-    if (g_generate_texture == true && !stabilize-- && data) {
+    static int stabilize = STABILIZE_COUNT;
+    if (g_generate_texture == true && (stabilize-- < 0) && data) {
 
         printf("Generating texture\n");
 
-        GenerateMinecraftCharacter(depthMD, sceneMD, g_ImageGenerator.GetRGB24ImageMap());
+        int failed_joints = GenerateMinecraftCharacter(depthMD, sceneMD, g_ImageGenerator.GetRGB24ImageMap());
     
-        NodePath character = *(NodePath *)data;
-        TexturePool::release_all_textures();
-        Texture *tex = TexturePool::load_texture("../skin.png");
-        tex->set_magfilter(Texture::FT_nearest);
-        character.set_texture(tex, 1);
-        
-        stabilize = 15;
-        g_generate_texture = false;
+        if (failed_joints == 0) {
+            NodePath character = *(NodePath *)data;
+            TexturePool::release_all_textures();
+            Texture *tex = TexturePool::load_texture("../skin.png");
+            tex->set_magfilter(Texture::FT_nearest);
+            character.set_texture(tex, 1);
+            
+            stabilize = STABILIZE_COUNT;
+            g_generate_texture = false;
+        }
     }
     
     if (g_reset == true && data) {
@@ -327,28 +330,30 @@ AsyncTask::DoneStatus updateNI(GenericAsyncTask* task, void* data)
 
 XnSkeletonJoint jointForName(string name)
 {
-    if (name.compare("body") == 0) {
+//    if (name.compare("body") == 0) {
+//        return XN_SKEL_TORSO;
+//    } else
+      if (name.compare("body_lower") == 0) {
         return XN_SKEL_TORSO;
-    } else if (name.compare("body_lower") == 0) {
-        return XN_SKEL_TORSO;
-    } else if (name.compare("head") == 0) {
-        return XN_SKEL_HEAD;
-    } else if (name.compare("l_arm") == 0) {
-        return XN_SKEL_RIGHT_SHOULDER;
-    } else if (name.compare("l_arm_lower") == 0) {
-        return XN_SKEL_RIGHT_ELBOW;
-    } else if (name.compare("r_arm") == 0) {
-        return XN_SKEL_LEFT_SHOULDER;
-    } else if (name.compare("r_arm_lower") == 0) {
-        return XN_SKEL_LEFT_ELBOW;
+//    } else
+//     if (name.compare("head") == 0) {
+//        return XN_SKEL_HEAD;
+//    } else if (name.compare("l_arm") == 0) {
+//        return XN_SKEL_RIGHT_SHOULDER;
+//    } else if (name.compare("l_arm_lower") == 0) {
+//        return XN_SKEL_RIGHT_ELBOW;
+//    } else if (name.compare("r_arm") == 0) {
+//        return XN_SKEL_LEFT_SHOULDER;
+//    } else if (name.compare("r_arm_lower") == 0) {
+//        return XN_SKEL_LEFT_ELBOW;
     } else if (name.compare("l_leg") == 0) {
         return XN_SKEL_RIGHT_HIP;
-    } else if (name.compare("l_leg_lower") == 0) {
-        return XN_SKEL_RIGHT_KNEE;
+//    } else if (name.compare("l_leg_lower") == 0) {
+//        return XN_SKEL_RIGHT_KNEE;
     } else if (name.compare("r_leg") == 0) {
         return XN_SKEL_LEFT_HIP;
-    } else if (name.compare("r_leg_lower") == 0) {
-        return XN_SKEL_LEFT_KNEE;
+//    } else if (name.compare("r_leg_lower") == 0) {
+//        return XN_SKEL_LEFT_KNEE;
     } else {
         return XN_SKEL_LEFT_FOOT; // Treat my left foot as the error case
     }
@@ -378,17 +383,47 @@ AsyncTask::DoneStatus moveJoint(GenericAsyncTask* task, void* data)
 
                 CharacterJoint *j = (CharacterJoint *)mcBundle->find_child(node.get_name());
                 LMatrix4f jmat = j->get_default_value();
-                LMatrix4f mat4 = node.get_mat();
 	            LMatrix3f mat = jmat.get_upper_3();
 	            LMatrix3f omat = LMatrix3f::ident_mat();
+	            omat.set(e[0],e[1],e[2],e[3],e[4],e[5],e[6],e[7],e[8]);
+//	            std::cout << node.get_name() << "\n";
+//	            std::cout << omat << "\n";
+//	            std::cout << mat << "\n";
+//	            std::cout << node.get_mat().get_upper_3() << "\n";
+	            LMatrix4f blah;
+	            j->get_net_transform(blah);
+//	            std::cout << blah.get_upper_3() << "\n";
                 omat.set(e[0],-e[2],e[1],-e[6],e[8],-e[7],e[3],-e[5],e[4]);
-                LMatrix4f omat4 = LMatrix4f(omat);
-                mat *= omat;
-                mat4.set_upper_3(mat);
-                node.set_mat(mat4);
-        //      node.set_r(-node.get_r());
-        //	    LVecBase3f hpr = node.get_hpr();
-        //	    node.set_hpr(hpr.get_x(),hpr.get_y(),-hpr.get_z());
+//                omat.set(e[0],e[2],e[1],e[6],e[8],e[7],e[3],e[5],e[4]);
+//                LMatrix4f omat4 = LMatrix4f(omat);
+                if (node.get_name().compare("head") == 0) {
+                    LMatrix4f pmat4 = node.get_parent().get_parent().get_mat();
+                    LMatrix3f pmat = pmat4.get_upper_3();
+//                    std::cout << "parent " << node.get_parent().get_name() << "\n";
+//                    std::cout << "pmat" << pmat << "\n";
+                    pmat.invert_in_place();
+//                    std::cout << "pmat inverted " << pmat << "\n"; 
+//                    std::cout << mat << "\n";
+                    mat *= pmat;
+                    mat *= omat;
+                }
+//                std::cout << mat << "\n";
+                if (node.get_name().compare("body_lower") == 0) {
+                    mat *= omat;
+//                    std::cout << mat << "\n";
+        	        LMatrix4f mat4 = node.get_mat();
+                    mat4.set_upper_3(mat);
+                    node.set_mat(mat4);
+                    LVecBase3f hpr = node.get_hpr();
+        	        node.set_hpr(hpr.get_x(),hpr.get_y(),hpr.get_z());
+                } else {
+                    LMatrix4f mat4 = node.get_mat();
+                    mat4.set_upper_3(mat);
+                    node.set_mat(mat4);
+                }
+//              node.set_h(90);
+//        	    LVecBase3f hpr = node.get_hpr();
+//        	    node.set_hpr(hpr.get_z(),hpr.get_y(),hpr.get_x());
 	        }
 	    }
 	}
@@ -414,19 +449,20 @@ void printCharacterChildren(PartGroup* bundle)
     }
 }
 
-void addBones(PartGroup *bundle, NodePathCollection *collection)
+void addBones(PartGroup *bundle, NodePathCollection *collection, NodePath *node)
 {
     for (int i = 0; i < bundle->get_num_children(); i++) {
         CharacterJoint *joint = (CharacterJoint *)bundle->get_child(i);
         
         std::cout << bundle->get_name() << " " << bundle->get_num_children() << " " << i << " " << joint->get_name() << "\n";
         
-        NodePath bone = window->get_render().attach_new_node(joint->get_name());
+        NodePath bone = node->attach_new_node(joint->get_name());
         mcBundle->control_joint(joint->get_name(), bone.node());
         bone.set_mat(joint->get_default_value());
+        bone.set_compass();
         collection->append(bone);
         
-        addBones(bundle->get_child(i), collection);
+        addBones(bundle->get_child(i), collection, &bone);
     }
 }
 
@@ -434,6 +470,8 @@ int main(int argc, char **argv)
 {
     SendCharacterInit();
     framework.open_framework(argc, argv);
+    WindowProperties wp = WindowProperties();
+    wp.set_fullscreen(1);
 
     const char *xmlFile = SAMPLE_XML_PATH;
 
@@ -446,6 +484,7 @@ int main(int argc, char **argv)
 
     framework.set_window_title("Maker Ant Farm");
     window = framework.open_window();
+    window->get_graphics_window()->request_properties(wp);
     // Get the camera and store it in a variable.
     camera = window->get_camera_group();
     camera.set_pos(0,-12,2);
@@ -453,7 +492,8 @@ int main(int argc, char **argv)
  
     // Load the environment model.
 //    NodePath environ = window->load_model(framework.get_models(), "models/environment");
-    NodePath environ = window->load_model(framework.get_models(), "../new/MinecraftBody_bend.egg");
+    NodePath environ = window->load_model(framework.get_models(), "MinecraftBody_bend2.egg");
+//    NodePath environ = window->load_model(framework.get_models(), "../new/MinecraftBody_bend.egg");
     environ.set_transparency(TransparencyAttrib::M_alpha);
     environ.set_pos(0,0,0);
     
@@ -488,7 +528,7 @@ int main(int argc, char **argv)
 
     printChildren(environ);
     printCharacterChildren(mcBundle);
-    addBones(mcBundle->find_child("<skeleton>"),&mcNodes);
+    addBones(mcBundle->find_child("<skeleton>"),&mcNodes,&window->get_render());
  
     PT(PGEntry) input = new PGEntry("Name Input");
     input->setup(19, 1);

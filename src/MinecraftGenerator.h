@@ -3,6 +3,6 @@
 
 #include <XnCppWrapper.h>
 
-void GenerateMinecraftCharacter(const xn::DepthMetaData& dmd, const xn::SceneMetaData& smd, const XnRGB24Pixel* image);
+int GenerateMinecraftCharacter(const xn::DepthMetaData& dmd, const xn::SceneMetaData& smd, const XnRGB24Pixel* image);
 
 #endif
