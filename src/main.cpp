@@ -66,6 +66,8 @@ xn::DepthGenerator g_DepthGenerator;
 xn::UserGenerator g_UserGenerator;
 xn::ImageGenerator g_ImageGenerator;
 
+XnPoint3D g_pos;
+
 XnBool g_bNeedPose = FALSE;
 XnChar g_strPose[20] = "";
 XnBool g_bDrawBackground = TRUE;
@@ -174,6 +176,10 @@ int setupNI(const char *xmlFile)
 {
 	XnStatus nRetVal = XN_STATUS_OK;
     
+    g_pos.X = 0.0;
+    g_pos.Y = 0.0;
+    g_pos.Z = 0.0;
+    
     xn::EnumerationErrors errors;
 	nRetVal = g_Context.InitFromXmlFile(xmlFile, &errors);
 	if (nRetVal == XN_STATUS_NO_NODE_PRESENT)
@@ -252,6 +258,10 @@ void resetUsers(const Event *theEvent, void *data)
 	text->set_text("Looking for user...");
 	app_state = ANT_FARM_WAITING;
 	g_reset = true;
+	g_pos.X = 0.0;
+	g_pos.Y = 0.0;
+	g_pos.Z = 0.0;
+	walk_anims.get_anim(0)->set_play_rate(0.0);
 
     printf("Restarting UserGenerator\n");
 }
@@ -296,16 +306,35 @@ void walkAround(NodePath *node)
     for (int i = 0; i < nUsers; i++) {
         if (g_UserGenerator.GetSkeletonCap().IsTracking(aUsers[i])) {
             XnSkeletonJointOrientation orient;
+            XnPoint3D pos;
             g_UserGenerator.GetSkeletonCap().GetSkeletonJointOrientation(aUsers[i],XN_SKEL_TORSO,orient);
+            g_UserGenerator.GetCoM(aUsers[i],pos);
+            
+            if (g_pos.X == 0.0 && g_pos.Y == 0.0 && g_pos.Z == 0.0) g_pos = pos;
+            
+            // Kinect has X and Z as the horizontal axes, and those are what we care about
+            float d_x = pos.X-g_pos.X;
+            float d_z = pos.Z-g_pos.Z;
+            float dist = sqrt(d_x*d_x + d_z*d_z);
+            g_pos = pos;
+            
+            LVecBase3f npos = node->get_pos();
+            node->set_pos(npos[0]+d_x/300.0,npos[1]+d_z/300.0,npos[2]);
+            
+            float rate = dist/20.0;
+            if (rate > 20.0) rate = 20.0;
+            walk_anims.get_anim(0)->set_play_rate(rate);
+            
             XnFloat *e = orient.orientation.elements;
             
             LMatrix3f omat = LMatrix3f::ident_mat();
             omat.set(e[0],e[2],e[1],e[6],e[8],e[7],e[3],e[5],e[4]);
+            
 	        LMatrix4f mat4 = node->get_mat();
             mat4.set_upper_3(omat);
             node->set_mat(mat4);
             LVecBase3f hpr = node->get_hpr();
-	        node->set_hpr(-hpr.get_x(),-hpr.get_y(),-hpr.get_z());
+	        node->set_hpr(-hpr.get_x(),0,0);
             break;
         }
     }
@@ -351,6 +380,8 @@ AsyncTask::DoneStatus updateNI(GenericAsyncTask* task, void* data)
         tex = TexturePool::load_texture("Char.png");
         tex->set_magfilter(Texture::FT_nearest);
         character.set_texture(tex, 1);
+        character.set_pos(0,0,0);
+        character.set_hpr(0,0,0);
         g_reset = false;
     } else if (data) {
         walkAround((NodePath *)data);
@@ -546,7 +577,7 @@ int main(int argc, char **argv)
     SendCharacterInit();
     framework.open_framework(argc, argv);
     WindowProperties wp = WindowProperties();
-    wp.set_fullscreen(1);
+//    wp.set_fullscreen(1);
 
     const char *xmlFile = SAMPLE_XML_PATH;
 
@@ -584,6 +615,7 @@ int main(int argc, char **argv)
     auto_bind(environ.node(), walk_anims, 0);
     walk_anims.get_anim(0)->play();
     walk_anims.get_anim(0)->loop(true);
+    walk_anims.get_anim(0)->set_play_rate(0.0);
     
 //    NodePath environ = window->load_model(framework.get_models(), "../new/MinecraftBody_bend.egg");
     environ.set_transparency(TransparencyAttrib::M_alpha);
