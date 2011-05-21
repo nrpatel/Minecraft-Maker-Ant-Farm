@@ -42,6 +42,8 @@
 #include <keyboardButton.h>
 #include <pnmImage.h>
 #include <cardMaker.h>
+#include <auto_bind.h>
+#include <animControlCollection.h>
 
 //---------------------------------------------------------------------------
 // Globals
@@ -57,6 +59,7 @@ WindowFramework* window;
 CharacterJointBundle* mcBundle;
 TextNode *text;
 PNMImage bgimage;
+AnimControlCollection walk_anims;
 
 xn::Context g_Context;
 xn::DepthGenerator g_DepthGenerator;
@@ -285,6 +288,29 @@ AsyncTask::DoneStatus spinCameraTask(GenericAsyncTask* task, void* data)
   return AsyncTask::DS_done;
 }
 
+void walkAround(NodePath *node)
+{
+    XnUserID aUsers[15];
+	XnUInt16 nUsers = 15;
+    g_UserGenerator.GetUsers(aUsers, nUsers);
+    for (int i = 0; i < nUsers; i++) {
+        if (g_UserGenerator.GetSkeletonCap().IsTracking(aUsers[i])) {
+            XnSkeletonJointOrientation orient;
+            g_UserGenerator.GetSkeletonCap().GetSkeletonJointOrientation(aUsers[i],XN_SKEL_TORSO,orient);
+            XnFloat *e = orient.orientation.elements;
+            
+            LMatrix3f omat = LMatrix3f::ident_mat();
+            omat.set(e[0],e[2],e[1],e[6],e[8],e[7],e[3],e[5],e[4]);
+	        LMatrix4f mat4 = node->get_mat();
+            mat4.set_upper_3(omat);
+            node->set_mat(mat4);
+            LVecBase3f hpr = node->get_hpr();
+	        node->set_hpr(-hpr.get_x(),-hpr.get_y(),-hpr.get_z());
+            break;
+        }
+    }
+}
+
 AsyncTask::DoneStatus updateNI(GenericAsyncTask* task, void* data)
 {
 	xn::SceneMetaData sceneMD;
@@ -326,6 +352,8 @@ AsyncTask::DoneStatus updateNI(GenericAsyncTask* task, void* data)
         tex->set_magfilter(Texture::FT_nearest);
         character.set_texture(tex, 1);
         g_reset = false;
+    } else if (data) {
+        walkAround((NodePath *)data);
     }
 
     return AsyncTask::DS_cont;
@@ -349,12 +377,12 @@ XnSkeletonJoint jointForName(string name)
 //        return XN_SKEL_LEFT_SHOULDER;
 //    } else if (name.compare("r_arm_lower") == 0) {
 //        return XN_SKEL_LEFT_ELBOW;
-    } else if (name.compare("l_leg") == 0) {
-        return XN_SKEL_RIGHT_HIP;
+//    } else if (name.compare("l_leg") == 0) {
+//        return XN_SKEL_RIGHT_HIP;
 //    } else if (name.compare("l_leg_lower") == 0) {
 //        return XN_SKEL_RIGHT_KNEE;
-    } else if (name.compare("r_leg") == 0) {
-        return XN_SKEL_LEFT_HIP;
+//    } else if (name.compare("r_leg") == 0) {
+//        return XN_SKEL_LEFT_HIP;
 //    } else if (name.compare("r_leg_lower") == 0) {
 //        return XN_SKEL_LEFT_KNEE;
     } else {
@@ -388,7 +416,7 @@ AsyncTask::DoneStatus moveJoint(GenericAsyncTask* task, void* data)
                 LMatrix4f jmat = j->get_default_value();
 	            LMatrix3f mat = jmat.get_upper_3();
 	            LMatrix3f omat = LMatrix3f::ident_mat();
-	            omat.set(e[0],e[1],e[2],e[3],e[4],e[5],e[6],e[7],e[8]);
+//	            omat.set(e[0],e[1],e[2],e[3],e[4],e[5],e[6],e[7],e[8]);
 //	            std::cout << node.get_name() << "\n";
 //	            std::cout << omat << "\n";
 //	            std::cout << mat << "\n";
@@ -419,11 +447,12 @@ AsyncTask::DoneStatus moveJoint(GenericAsyncTask* task, void* data)
                     node.set_mat(mat4);
                     LVecBase3f hpr = node.get_hpr();
         	        node.set_hpr(hpr.get_x(),hpr.get_y(),hpr.get_z());
-                } else {
-                    LMatrix4f mat4 = node.get_mat();
-                    mat4.set_upper_3(mat);
-                    node.set_mat(mat4);
                 }
+//                 else {
+//                    LMatrix4f mat4 = node.get_mat();
+//                    mat4.set_upper_3(mat);
+//                    node.set_mat(mat4);
+//                }
 //              node.set_h(90);
 //        	    LVecBase3f hpr = node.get_hpr();
 //        	    node.set_hpr(hpr.get_z(),hpr.get_y(),hpr.get_x());
@@ -550,7 +579,12 @@ int main(int argc, char **argv)
  
     // Load the environment model.
 //    NodePath environ = window->load_model(framework.get_models(), "models/environment");
-    NodePath environ = window->load_model(framework.get_models(), "MinecraftBody_bend2.egg");
+    NodePath environ = window->load_model(framework.get_models(), "MinecraftBody_bend_walk.egg");
+    window->load_model(environ, "MinecraftBody_bend_walk-walk.egg");
+    auto_bind(environ.node(), walk_anims, 0);
+    walk_anims.get_anim(0)->play();
+    walk_anims.get_anim(0)->loop(true);
+    
 //    NodePath environ = window->load_model(framework.get_models(), "../new/MinecraftBody_bend.egg");
     environ.set_transparency(TransparencyAttrib::M_alpha);
     environ.set_pos(0,0,0);
@@ -569,24 +603,11 @@ int main(int argc, char **argv)
     Character* eveCH = (Character*)eveChNP.node();
     mcBundle = eveCH->get_bundle(0);
 
-//    NodePath bone = window->get_render().attach_new_node("head");
-//    mcBundle->control_joint("head", bone.node());
-//    CharacterJoint *joint = (CharacterJoint *)mcBundle->find_child("head");
-//    bone.set_mat(joint->get_default_value());
-//    std::cout << joint->get_default_value() << "\n";
-//    taskMgr->add(new GenericAsyncTask("Moves a joint", &moveJoint, bone));
-
-//    bone = window->get_render().attach_new_node("body");
-//    mcBundle->control_joint("head", bone.node());
-//    CharacterJoint *joint = (CharacterJoint *)mcBundle->find_child("head");
-//    bone.set_mat(joint->get_default_value());
-//    std::cout << joint->get_default_value() << "\n";
-
     NodePathCollection mcNodes = NodePathCollection();
 
     printChildren(environ);
     printCharacterChildren(mcBundle);
-    addBones(mcBundle->find_child("<skeleton>"),&mcNodes,&window->get_render());
+//    addBones(mcBundle->find_child("<skeleton>"),&mcNodes,&window->get_render());
  
     PT(PGEntry) input = new PGEntry("Name Input");
     input->setup(19, 1);
@@ -595,7 +616,6 @@ int main(int argc, char **argv)
     framework.get_event_handler().add_hook(input->get_accept_event(KeyboardButton::enter()), acceptEntry, &inputNP);
     inputNP.set_scale(0.1);
     inputNP.set_pos(-0.9,0.0,-0.9);
-//    inputNP.hide();
  
     text = new TextNode("Instructions");
     text->set_text("Looking for user...");
@@ -608,7 +628,8 @@ int main(int argc, char **argv)
     // to the task function.
 //    taskMgr->add(new GenericAsyncTask("Spins the camera", &spinCameraTask, (void*) NULL));
     taskMgr->add(new GenericAsyncTask("Updates OpenNI data", &updateNI, &environ));
-    taskMgr->add(new GenericAsyncTask("Moves a joint", &moveJoint, &mcNodes));
+//    taskMgr->add(new GenericAsyncTask("Moves a joint", &moveJoint, &mcNodes));
+
     taskMgr->add(new GenericAsyncTask("Updates preview", &updatePreview, &bgtex));
     window->enable_keyboard();
 
