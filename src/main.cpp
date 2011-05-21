@@ -321,8 +321,8 @@ void walkAround(NodePath *node)
             LVecBase3f npos = node->get_pos();
             node->set_pos(npos[0]+d_x/300.0,npos[1]+d_z/300.0,npos[2]);
             
-            float rate = dist/20.0;
-            if (rate > 20.0) rate = 20.0;
+            float rate = dist/25.0;
+            if (rate > 1.0) rate = 1.0;
             walk_anims.get_anim(0)->set_play_rate(rate);
             
             XnFloat *e = orient.orientation.elements;
@@ -524,7 +524,7 @@ AsyncTask::DoneStatus updatePreview(GenericAsyncTask* task, void* data)
                 XnLabel label = *pLabels++;
                 XnUInt32 nColorID = label % nUserColors;
                 if (!label) {
-                    bgimage.set_xel_val(x, y, 0x66, 0x66, 0x66);
+                    bgimage.set_xel_val(x, y, 0x69, 0x69, 0x69);
                 } else {
                     bgimage.set_xel_val(x, y, UserColors[nColorID][0], UserColors[nColorID][1], UserColors[nColorID][2]);
                 }
