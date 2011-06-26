@@ -17,10 +17,10 @@ INCLUDEPATH = -I/usr/include/curl/                      \
               -I/usr/include/python2.6/
 
 # DEBUG
-CFLAGS      = $(LIBPATH) -ggdb -o0 $(INCLUDEPATH)
+#CFLAGS      = $(LIBPATH) -ggdb -o0 $(INCLUDEPATH)
 
 # RELEASE
-#CFLAGS      = $(LIBPATH) -o3 $(INCLUDEPATH)
+CFLAGS      = $(LIBPATH) -o3 $(INCLUDEPATH)
 
 SRCS        = src/SendCharacter.c $(wildcard src/*.cpp)
 
@@ -38,7 +38,7 @@ $(EXE): $(OBJS)
 	$(CC) -static $(CFLAGS) $(LIBNAME) -c $< -o $@
 
 clean:
-	rm -f $(OBJS)
+	rm -f src/*.o
 	rm -f $(EXE)
 
 redo:
