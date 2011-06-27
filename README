@@ -8,7 +8,9 @@ character skins that look like people.
 
 I started off of one of the OpenNI samples, so this has to stick with the LGPL
 license that was in place on that.  The MinecraftGenerator.cpp file is entirely
-my own, so that itself is public domain.
+my own, so that itself is public domain.  The .egg is generated from
+ShnitzelKiller's Blender character rig from:
+http://www.minecraftforum.net/topic/9581-minecraft-blender-rig-%E2%80%93-show-off-your-skins-in-style/
 
 As a warning, this is easily the worst code I've ever hacked together.  I'm just
 releasing the code because there is no reason not to.  The
